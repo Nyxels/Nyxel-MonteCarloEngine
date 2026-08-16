@@ -2,9 +2,11 @@
 ## Auther: Marcel Rohr
 ## License: MIT
 
+from sys import path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+import numpy as np
 
 import matplotlib
 matplotlib.use("TkAgg")  # Wichtig: Backend BEVOR pyplot importiert wird
@@ -453,7 +455,7 @@ class MonteCarloApp:
         self.log_text.see("end")
         
     def _load_data(self):
-        """CSV-Datei laden und in self.trades speichern."""
+        """CSV-Datei laden und über TradeLoader parsen."""
         path = filedialog.askopenfilename(
             title="Select Trade Data CSV",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
@@ -462,17 +464,12 @@ class MonteCarloApp:
             return
             
         self.current_file = path
-        self.trades = []
         
         try:
-            with open(path, "r", newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    # Hier musst du später deine echten Trade-Daten parsen
-                    # Aktuell: einfacher Sanity-Check
-                    self.trades.append(row)
+            from src.engine import TradeLoader
+            self.trades = TradeLoader.from_csv(Path(path))
             
-            # UI Update
+            # UI Updates
             filename = Path(path).name
             self.lbl_file.configure(text=filename, fg=COLORS["success"])
             self.status_bar.configure(text=f"Loaded: {filename}  |  Trades: {len(self.trades)}")
@@ -481,11 +478,12 @@ class MonteCarloApp:
             # Raw Data Tab befüllen
             for item in self.tree.get_children():
                 self.tree.delete(item)
+                
             for i, trade in enumerate(self.trades[:100]):  # max 100 anzeigen
                 self.tree.insert("", "end", values=(
                     i+1,
                     trade.get("symbol", "N/A"),
-                    trade.get("profit_loss", "0"),
+                    trade.get("profit_loss", 0.0),
                     trade.get("exit_reason", "N/A"),
                     trade.get("duration", "0"),
                 ))
@@ -495,57 +493,106 @@ class MonteCarloApp:
             messagebox.showerror("Error", f"Failed to load CSV:\n{e}")
             
     def _run_simulation(self):
-        """PLATZHALTER für deine Monte Carlo Engine."""
+        """Startet die Monte-Carlo-Simulation mit den geladenen Daten."""
         if not self.trades:
-            self._log("No trade data loaded! Load a CSV first.", "error")
-            messagebox.showwarning("No Data", "Please load trade data before running simulation.")
+            messagebox.showwarning("No Data", "Bitte zuerst eine CSV-Datei laden!")
             return
+
+        from src.engine import MonteCarloEngine
+
+        try:
+            start_cap = float(self.param_entries["Start Capital ($):"].get())
+            n_sims = int(self.param_entries["# Simulations:"].get())
+
+            engine = MonteCarloEngine(
+                trades=self.trades,
+                start_capital=start_cap,
+                n_simulations=n_sims,
+                sampler_type="iid",
+            )
             
-        self._log("Starting Monte Carlo simulation...", "warning")
-        
-        # ═══════════════════════════════════════════════════════════════════════
-        # HIER KOMMT SPÄTER DEINE ENGINE REIN
-        # 
-        # Pseudocode für dich:
-        #   1. Lese Parameter aus self.param_entries
-        #   2. Führe Bootstrap durch (random.choices(self.trades, k=n))
-        #   3. Berechne Equity-Kurve pro Run
-        #   4. Speichere Metriken pro Run in self.simulations
-        #   5. Rufe self._update_charts() und self._update_metrics() auf
-        # ═══════════════════════════════════════════════════════════════════════
-        
-        # DEMO: Zeichne ein paar zufällige Linien als Platzhalter
+            # 1. Engine ausführen und Ergebnis in self.simulations speichern
+            self.simulations = engine.run()
+            
+            # 2. Charts und Metriken in der UI aktualisieren
+            self._update_charts()
+            self._update_metrics()
+            
+            self._log(f"Simulation fertig! Median Return: {self.simulations.p50_cagr:.2%}", "success")
+            
+        except Exception as e:
+            self._log(f"Simulation Error: {e}", "error")
+            messagebox.showerror("Simulation Error", f"Fehler bei der Berechnung:\n{e}")
+
+    def _update_charts(self):
+        """Zeichnet die Matplotlib-Charts mit den Simulationsdaten neu."""
+        if not hasattr(self, 'simulations') or self.simulations is None:
+            return
+
+        summary = self.simulations
+
+        # --- 1. Tab: Equity Curves ---
         self.ax_equity.clear()
         self.ax_equity.set_facecolor(COLORS["bg_secondary"])
-        self.ax_equity.set_title("Monte Carlo Equity Curves (DEMO)", color=COLORS["text"])
+        self.ax_equity.set_title("Monte Carlo Equity Curves", color=COLORS["text"], fontsize=11)
         self.ax_equity.set_xlabel("Trade #", color=COLORS["text_muted"])
         self.ax_equity.set_ylabel("Equity ($)", color=COLORS["text_muted"])
         self.ax_equity.tick_params(colors=COLORS["text_muted"])
         self.ax_equity.grid(True, alpha=0.2, color=COLORS["text_muted"])
+
+        # Bis zu 100 Pfade zeichnen, damit die Performance flüssig bleibt
+        max_lines = min(100, len(summary.equity_curves))
+        for i in range(max_lines):
+            self.ax_equity.plot(summary.equity_curves[i], color=COLORS["accent"], alpha=0.15, linewidth=0.8)
+
+        # Perzentil-Pfade (Median / 5% / 95%) als hervorgehobene Linien
+        p50 = np.median(summary.equity_curves, axis=0)
+        self.ax_equity.plot(p50, color="#f7768e", linewidth=2, label="Median Path")
+        self.ax_equity.legend(facecolor=COLORS["bg_tertiary"], edgecolor="none", labelcolor=COLORS["text"])
         
-        for _ in range(50):
-            x = list(range(200))
-            y = [100000 + random.gauss(0, 500) * i**0.5 + random.gauss(0, 2000) for i in x]
-            self.ax_equity.plot(x, y, alpha=0.3, color=COLORS["accent"], linewidth=0.8)
-            
-        self.ax_equity.axhline(y=100000, color=COLORS["text_muted"], linestyle="--", alpha=0.5)
         self.canvas_equity.draw()
-        
-        # Demo Metrics
-        self.metric_labels["Total Return"].configure(text=f"{random.uniform(-10, 30):.2f}%")
-        self.metric_labels["Max Drawdown"].configure(text=f"{random.uniform(5, 25):.2f}%")
-        self.metric_labels["Sharpe Ratio"].configure(text=f"{random.uniform(0.5, 2.0):.2f}")
-        
-        self.sim_stats.configure(text=f"Runs: 1,000\nTrades: {len(self.trades)}\nTime: ~120ms")
-        self._log("Simulation complete (DEMO MODE)", "success")
-        
-    def _update_charts(self):
-        pass  # Implementiere dies, wenn deine Engine läuft
-        
+
+        # --- 2. Tab: Distribution Histogram ---
+        self.ax_dist.clear()
+        self.ax_dist.set_facecolor(COLORS["bg_secondary"])
+        self.ax_dist.set_title("End Equity Distribution", color=COLORS["text"], fontsize=11)
+        self.ax_dist.set_xlabel("Final Equity ($)", color=COLORS["text_muted"])
+        self.ax_dist.set_ylabel("Frequency", color=COLORS["text_muted"])
+        self.ax_dist.tick_params(colors=COLORS["text_muted"])
+        self.ax_dist.grid(True, alpha=0.2, color=COLORS["text_muted"])
+
+        self.ax_dist.hist(summary.final_equities, bins=40, color=COLORS["accent"], edgecolor=COLORS["bg"], alpha=0.7)
+        self.canvas_dist.draw()
+
+        # --- 3. Tab: Drawdown Histogram ---
+        self.ax_dd.clear()
+        self.ax_dd.set_facecolor(COLORS["bg_secondary"])
+        self.ax_dd.set_title("Drawdown Distribution", color=COLORS["text"], fontsize=11)
+        self.ax_dd.set_xlabel("Max Drawdown (%)", color=COLORS["text_muted"])
+        self.ax_dd.set_ylabel("Frequency", color=COLORS["text_muted"])
+        self.ax_dd.tick_params(colors=COLORS["text_muted"])
+        self.ax_dd.grid(True, alpha=0.2, color=COLORS["text_muted"])
+
+        self.ax_dd.hist(summary.max_drawdowns_pct, bins=40, color=COLORS["danger"], edgecolor=COLORS["bg"], alpha=0.7)
+        self.canvas_dd.draw()
+
     def _update_metrics(self):
-        # einfaches update der Metriken, wenn die Engine läuft
-        pass  # Implementiere dies, wenn deine Engine läuft
-        
+            """Aktualisiert die Kennzahlen auf der rechten Seite."""
+            if not hasattr(self, 'simulations') or self.simulations is None:
+                return
+
+            s = self.simulations
+
+            # Metriken berechnen & formatieren
+            self.metric_labels["Total Return"].configure(text=f"{s.p50_cagr:.2%}")
+            self.metric_labels["CAGR"].configure(text=f"{s.p50_cagr:.2%}")
+            self.metric_labels["Max Drawdown"].configure(text=f"{s.p95_max_dd:.2f}%")
+            self.metric_labels["Probability of Ruin"].configure(text=f"{s.probability_of_ruin:.2%}")
+
+            # Stats-Label unten rechts
+            self.sim_stats.configure(
+                text=f"Runs: {len(s.final_equities)}\nTrades: {len(self.trades)}\nConv. SE: {s.convergence_score:.2f}"
+        )
     def _reset(self):
         #reset alle Daten und UI-Elemente
         self.trades = []
