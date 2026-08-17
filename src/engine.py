@@ -127,12 +127,14 @@ class MonteCarloEngine:
         prob_ruin = float(np.mean(min_equities <= ruin_level))
 
         # Ertrag & Perzentile
-        returns = (final_equities - self.start_capital) / self.start_capital
-        p50_cagr = float(np.median(returns))
+        years = (n_trades / 252)  # Annahme: 252 Handelstage pro Jahr
+        years = max(years, 1e-6)  # Vermeidung von Division durch Null
+        cagr = (final_equities / self.start_capital) ** (1.0 / years) - 1.0
+        p50_cagr = float(np.percentile(cagr, 50))
         p95_max_dd = float(np.percentile(max_dds_pct, 95))
         
         # Konvergenz-Standardfehler
-        convergence_score = float(np.std(final_equities) / np.sqrt(self.n_simulations))
+        convergence_score = float(np.std(cagr) / np.sqrt(self.n_simulations))
 
         return SimulationSummary(
             equity_curves=equity_curves,
