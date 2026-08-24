@@ -67,6 +67,8 @@ class SimulationSummary:
     p95_max_dd: float = 0.0
     probability_of_ruin: float = 0.0
     convergence_score: float = 0.0
+    var_95: float = 0.0
+    cvar_95: float = 0.0
 
 
 class MonteCarloEngine:
@@ -136,6 +138,10 @@ class MonteCarloEngine:
         # Konvergenz-Standardfehler
         convergence_score = float(np.std(cagr) / np.sqrt(self.n_simulations))
 
+        # VaR & CVaR
+        var_95 = np.percentile(final_equities, 5)
+        cvar_95 = np.mean(final_equities[final_equities <= var_95])
+
         return SimulationSummary(
             equity_curves=equity_curves,
             final_equities=final_equities,
@@ -144,6 +150,8 @@ class MonteCarloEngine:
             p95_max_dd=p95_max_dd,
             probability_of_ruin=prob_ruin,
             convergence_score=convergence_score,
+            var_95=var_95,
+            cvar_95=cvar_95,
         )
 
 
@@ -159,6 +167,8 @@ if __name__ == "__main__":
     dummy_trades = [{"profit_loss": x} for x in [100, -50, 200, -30, 80, -120]]
     engine = MonteCarloEngine(dummy_trades, start_capital=10000, n_simulations=100)
     summary = engine.run()
+    summary.var_95 = np.percentile(summary.final_equities, 5)
+    summary.cvar_95 = np.mean(summary.final_equities[summary.final_equities <= summary.var_95])
 
     print("Engine Test erfolgreich!")
     print(f"Median Return: {summary.p50_cagr:.2%}")
