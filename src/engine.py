@@ -174,3 +174,5 @@ if __name__ == "__main__":
     print(f"Median Return: {summary.p50_cagr:.2%}")
     print(f"95% Max DD:    {summary.p95_max_dd:.2f}%")
     print(f"Prob of Ruin:  {summary.probability_of_ruin:.2%}")
+    print(f"95% VaR:     {summary.var_95:.2f} €")
+    print(f"95% CVaR:    {summary.cvar_95:.2f} €")

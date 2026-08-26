@@ -322,6 +322,8 @@ class MonteCarloApp:
             ("Profit Factor", "0.00", COLORS["text"]),
             ("Win Rate", "0.00%", COLORS["success"]),
             ("Probability of Ruin", "0.00%", COLORS["warning"]),
+            ("VaR (95%)", "0.00 €", COLORS["danger"]),
+            ("CVaR (95%)", "0.00 €", COLORS["danger"]),
         ]
         
         for name, default, color in metrics:
@@ -588,6 +590,8 @@ class MonteCarloApp:
             self.metric_labels["CAGR"].configure(text=f"{s.p50_cagr:.2%}")
             self.metric_labels["Max Drawdown"].configure(text=f"{s.p95_max_dd:.2f}%")
             self.metric_labels["Probability of Ruin"].configure(text=f"{s.probability_of_ruin:.2%}")
+            self.metric_labels["VaR (95%)"].configure(text=f"{s.var_95:.2f} €")
+            self.metric_labels["CVaR (95%)"].configure(text=f"{s.cvar_95:.2f} €")
 
             # Stats-Label unten rechts
             self.sim_stats.configure(
