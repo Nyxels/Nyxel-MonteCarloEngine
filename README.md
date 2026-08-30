@@ -171,12 +171,3 @@ Connect
 License
 MIT License — feel free to use, modify, and contribute.
 plain
-
-
----
-
-Speichere das als `README.md` in deinem Repo-Root. Dann:
-
-```bash
-git add README.md
-git commit -m "docs: add professional README with methodology and architecture"
